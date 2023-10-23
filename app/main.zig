@@ -24,21 +24,28 @@ pub fn main() !void {
 
     // String comparison is sus here.
     if (std.mem.eql(u8, command, ".dbinfo")) {
-        var file = try std.fs.cwd().openFile(database_file_path, .{});
-        defer file.close();
-
-        const dbInfo = try DBInfo.read(file);
+        const dbInfo = try DBInfo.read(database_file_path);
+        defer dbInfo.close();
 
         try std.io.getStdOut().writer().print("database page size: {}\n", .{dbInfo.page_size});
         try std.io.getStdOut().writer().print("number of tables: {}\n", .{dbInfo.table_count});
     }
+
+    if (std.mem.eql(u8, command, ".tables")) {
+        const dbInfo = try DBInfo.read(database_file_path);
+        defer dbInfo.close();
+    }
 }
 
 const DBInfo = struct {
+    file: std.fs.File,
     page_size: u16,
     table_count: u16,
 
-    pub fn read(file: std.fs.File) !DBInfo {
+    pub fn read(database_file_path: []const u8) !DBInfo {
+        var file = try std.fs.cwd().openFile(database_file_path, .{});
+        errdefer file.close();
+
         var buf: [2]u8 = undefined;
         _ = try file.seekTo(16);
         _ = try file.read(&buf);
@@ -60,6 +67,36 @@ const DBInfo = struct {
         _ = try file.read(&buffer);
         const table_count = std.mem.readInt(u16, &buffer, .Big);
 
-        return DBInfo{ .page_size = page_size, .table_count = table_count };
+        return DBInfo{ .page_size = page_size, .table_count = table_count, .file = file };
+    }
+
+    pub fn close(self: DBInfo) void {
+        self.file.close();
+    }
+
+    pub fn table_names(self: DBInfo, allocator: std.mem.Allocator) ![][]u8 {
+        _ = allocator;
+
+        _ = try self.file.seekTo(100);
+
+        var buffer: [2]u8 = undefined;
+        _ = try self.file.seekBy(5);
+        _ = try self.file.read(&buffer);
+        const cell_content_start = std.mem.readInt(u16, &buffer, .Big);
+
+        if (cell_content_start != 0) {
+            _ = try self.file.seekTo(cell_content_start);
+        } else {
+            _ = try self.file.seekTo(65536);
+        }
+
+        for (0..self.table_count) |i| {
+            // We are still in a table leaf page here
+            // We need to read a cell properly
+            // To read a cell properly we need to read a varint properly
+            _ = i;
+        }
+
+        return [_][]u8{"hello"};
     }
 };
